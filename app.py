@@ -144,20 +144,6 @@ h1, h2, h3 {{
 .battery-fill {{ height:100%; border-radius:3px; background: linear-gradient(90deg, {CAUTION_YELLOW}, {SIGNAL_GREEN}); }}
 
 .spec-footer {{ color:{MUTED}; font-family:'IBM Plex Mono', monospace; font-size:12px; line-height:1.6; }}
-
-/* --- Scenario coverage banner: reacts live to the sliders --- */
-.coverage-badge {{
-  display:flex; align-items:center; gap:10px; border-radius:10px;
-  padding:11px 16px; margin: 2px 0 4px; font-size:13.5px;
-}}
-.coverage-ok {{
-  background: rgba(62,213,152,0.08); border:1px solid rgba(62,213,152,0.35); color:{LANE_WHITE};
-}}
-.coverage-warn {{
-  background: rgba(255,92,108,0.08); border:1px solid rgba(255,92,108,0.4); color:{LANE_WHITE};
-}}
-.coverage-badge .cov-icon {{ font-size:16px; }}
-.coverage-badge .cov-meta {{ color:{MUTED}; font-family:'IBM Plex Mono', monospace; font-size:11.5px; margin-left:auto; }}
 </style>
 """,
     unsafe_allow_html=True,
@@ -176,9 +162,6 @@ feature_cols = bundle["feature_cols"]
 target_cols = bundle["target_cols"]
 diagnostics = bundle["diagnostics"]
 feature_ranges = bundle["feature_ranges"]
-training_points_normalized = bundle.get("training_points_normalized")
-coverage_threshold = bundle.get("coverage_threshold")
-has_coverage_data = training_points_normalized is not None and coverage_threshold is not None
 
 TARGET_LABELS = {
     "mean_wait_time": "Wait time",
@@ -219,14 +202,13 @@ st.markdown(
     """
 <div class="topbar">
   <span class="badge"><span class="dot"></span>MODEL LIVE</span>
-  <span class="badge-alt">linear regression · 79 simulated scenarios</span>
+  <span class="badge-alt">linear regression · 64 simulated scenarios</span>
 </div>
 <div class="hero-title">⚡ EV Traffic Grid Predictor</div>
 <div class="hero-tag">Skip the simulation. Ask the model.</div>
-<p class="hero-sub">Trained on 237 NetLogo BehaviorSpace runs across two experiments on the
-EV-enabled Traffic Grid model: EV share and charging setup, plus car count and traffic
-light timing. Set a scenario below and get the expected traffic and charging outcome
-instantly, no simulation run required.</p>
+<p class="hero-sub">Trained on 192 NetLogo BehaviorSpace runs of the EV-enabled Traffic Grid
+model. Set an EV share and a charging setup below, and get the expected traffic and
+charging outcome instantly, no simulation run required.</p>
 """,
     unsafe_allow_html=True,
 )
@@ -241,7 +223,7 @@ col1, col2, col3 = st.columns(3)
 
 with col1:
     ev_percentage = st.slider(
-        "⚡ EV percentage — share of cars that are EVs",
+        "⚡ EV percentage — share of the 200 cars that are EVs",
         min_value=int(feature_ranges["ev_percentage"][0]),
         max_value=int(feature_ranges["ev_percentage"][1]),
         value=20,
@@ -264,84 +246,11 @@ with col3:
         step=1,
     )
 
-col4, col5 = st.columns(2)
-with col4:
-    num_cars = st.slider(
-        "🚗 Number of cars on the grid",
-        min_value=int(feature_ranges["num_cars"][0]),
-        max_value=int(feature_ranges["num_cars"][1]),
-        value=200,
-        step=50,
-    )
-with col5:
-    ticks_per_cycle = st.slider(
-        "🚦 Ticks per traffic light cycle",
-        min_value=int(feature_ranges["ticks_per_cycle"][0]),
-        max_value=int(feature_ranges["ticks_per_cycle"][1]),
-        value=20,
-        step=10,
-    )
-
 X_input = pd.DataFrame(
-    [[ev_percentage, num_charging_stations, charging_bays, num_cars, ticks_per_cycle]],
-    columns=feature_cols,
+    [[ev_percentage, num_charging_stations, charging_bays]], columns=feature_cols
 )
 prediction = model.predict(X_input)[0]
 pred_dict = dict(zip(target_cols, prediction))
-
-# The model is a linear fit pooled from two experiments that were never
-# jointly swept (a "star" design), so extreme combinations can extrapolate
-# past what's physically possible. Clip to valid ranges for display.
-pred_dict["mean_wait_time"] = max(0.0, pred_dict["mean_wait_time"])
-pred_dict["mean_speed"] = max(0.0, pred_dict["mean_speed"])
-pred_dict["count_charging"] = max(0.0, min(pred_dict["count_charging"], num_charging_stations * charging_bays))
-pred_dict["num_cars_stopped"] = max(0.0, min(pred_dict["num_cars_stopped"], num_cars))
-pred_dict["mean_ev_battery"] = max(0.0, min(100.0, pred_dict["mean_ev_battery"]))
-
-# ---------------------------------------------------------------------------
-# Scenario coverage — THIS is the thing that actually responds to your
-# sliders. The badges on each card below are fixed properties of the model
-# (how well it predicts that metric overall); this banner instead checks how
-# close your specific chosen combination is to a combination the simulation
-# actually ran, versus the model extrapolating into untested territory.
-# ---------------------------------------------------------------------------
-if has_coverage_data:
-    query_norm = np.array(
-        [
-            (X_input[c].iloc[0] - feature_ranges[c][0])
-            / (feature_ranges[c][1] - feature_ranges[c][0] or 1)
-            for c in feature_cols
-        ]
-    )
-    nearest_dist = float(np.linalg.norm(training_points_normalized - query_norm, axis=1).min())
-    is_covered = nearest_dist <= coverage_threshold
-
-    if is_covered:
-        st.markdown(
-            f"""<div class="coverage-badge coverage-ok">
-            <span class="cov-icon">✅</span>
-            <span>This combination is close to a scenario the simulation actually ran, predictions below are reasonably trustworthy.</span>
-            <span class="cov-meta">distance {nearest_dist:.2f} / threshold {coverage_threshold:.2f}</span>
-            </div>""",
-            unsafe_allow_html=True,
-        )
-    else:
-        st.markdown(
-            f"""<div class="coverage-badge coverage-warn">
-            <span class="cov-icon">⚠️</span>
-            <span>No simulation run closely matches this combination, the model is extrapolating here. Treat the numbers below as a rough estimate.</span>
-            <span class="cov-meta">distance {nearest_dist:.2f} / threshold {coverage_threshold:.2f}</span>
-            </div>""",
-            unsafe_allow_html=True,
-        )
-else:
-    st.markdown(
-        """<div class="coverage-badge coverage-warn">
-        <span class="cov-icon">⚠️</span>
-        <span>Scenario coverage check unavailable — this model file predates that feature. Retrain with the current train_model.py to enable it.</span>
-        </div>""",
-        unsafe_allow_html=True,
-    )
 
 st.markdown('<div class="road"></div>', unsafe_allow_html=True)
 
@@ -378,27 +287,17 @@ st.markdown(cards_html, unsafe_allow_html=True)
 with st.expander("What do the confidence badges mean?"):
     st.markdown(
         """
-There are two different trust signals on this page, and they answer
-different questions:
-
-- The **green/yellow/red badge banner above the cards** changes as you move
-  the sliders. It checks whether *this specific combination* is close to a
-  scenario the simulation actually ran.
-- The **🟢🟡🔴 badge on each card below** does *not* change with the sliders.
-  It's a fixed property of the model: how well it predicts that particular
-  metric overall, found once during training and the same for every scenario.
-
 The simulation has randomness built in (random starting battery, random car
 placement), so three repeated runs of the *same* settings still land in
 different places. This model was validated with leave-one-out cross-validation
-across the 79 unique parameter combinations pooled from both experiments, and
-the R² below reflects how much of that variation is genuinely explained by
-your five inputs versus simulation noise.
+across the 64 unique parameter combinations, and the R² below reflects how much
+of that variation is genuinely explained by your three inputs versus simulation noise.
 
 - 🟢 **Well predicted** — R² ≥ 0.4, the input parameters meaningfully drive this outcome
 - 🟡 **Weak relationship** — R² between 0.15 and 0.4, some signal but mostly noise
 - 🔴 **Not meaningfully predictable** — R² below 0.15, this outcome is dominated by
-  randomness rather than by any of the five inputs
+  factors held constant across the experiment (200 cars, 5×5 grid, fixed traffic
+  light timing) rather than by EV share, station count, or bays
         """
     )
     diag_df = pd.DataFrame(diagnostics).T[["r2", "mae", "confidence"]]
@@ -421,8 +320,6 @@ with col_a:
             "ev_percentage": "EV percentage",
             "num_charging_stations": "Number of charging stations",
             "charging_bays": "Charging bays per station",
-            "num_cars": "Number of cars",
-            "ticks_per_cycle": "Ticks per traffic light cycle",
         }[x],
     )
 with col_b:
@@ -431,47 +328,23 @@ with col_b:
     )
 
 lo, hi = feature_ranges[sweep_var]
-step_map = {
-    "charging_bays": 1,
-    "num_charging_stations": 4,
-    "ev_percentage": 10,
-    "num_cars": 50,
-    "ticks_per_cycle": 10,
-}
-step = step_map[sweep_var]
+step = 1 if sweep_var == "charging_bays" else 4 if sweep_var == "num_charging_stations" else 10
 sweep_values = list(range(int(lo), int(hi) + 1, step))
 
 rows = []
 for v in sweep_values:
-    row = {
-        "ev_percentage": ev_percentage,
-        "num_charging_stations": num_charging_stations,
-        "charging_bays": charging_bays,
-        "num_cars": num_cars,
-        "ticks_per_cycle": ticks_per_cycle,
-    }
+    row = {"ev_percentage": ev_percentage, "num_charging_stations": num_charging_stations, "charging_bays": charging_bays}
     row[sweep_var] = v
     rows.append(row)
 sweep_df = pd.DataFrame(rows)[feature_cols]
 sweep_preds = model.predict(sweep_df)
 metric_idx = target_cols.index(metric_to_plot)
 
-raw_y = sweep_preds[:, metric_idx]
-if metric_to_plot == "mean_ev_battery":
-    plot_y = np.clip(raw_y, 0.0, 100.0)
-elif metric_to_plot == "count_charging":
-    caps = (sweep_df["num_charging_stations"] * sweep_df["charging_bays"]).values
-    plot_y = np.clip(raw_y, 0.0, caps)
-elif metric_to_plot == "num_cars_stopped":
-    plot_y = np.clip(raw_y, 0.0, sweep_df["num_cars"].values)
-else:  # mean_wait_time, mean_speed
-    plot_y = np.clip(raw_y, 0.0, None)
-
 fig = go.Figure()
 fig.add_trace(
     go.Scatter(
         x=sweep_values,
-        y=plot_y,
+        y=sweep_preds[:, metric_idx],
         mode="lines+markers",
         line=dict(width=3, color=CHARGE_AMBER),
         marker=dict(size=9, color=SIGNAL_GREEN, line=dict(width=2, color=ASPHALT)),
@@ -493,7 +366,7 @@ st.plotly_chart(fig, use_container_width=True)
 st.markdown('<div class="road"></div>', unsafe_allow_html=True)
 st.markdown(
     """<p class="spec-footer">MODEL — Linear Regression · trained on outcomes averaged across
-    3 repetitions per parameter combination · 79 unique combos pooled from ev-experiment and
-    congestion-experiment · NetLogo 7.0.4 Traffic Grid</p>""",
+    3 repetitions per parameter combination · 64 unique combos · ev-experiment BehaviorSpace
+    sweep · NetLogo 7.0.4 Traffic Grid</p>""",
     unsafe_allow_html=True,
 )
