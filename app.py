@@ -202,14 +202,14 @@ st.markdown(
     """
 <div class="topbar">
   <span class="badge"><span class="dot"></span>MODEL LIVE</span>
-  <span class="badge-alt">linear regression · 79 simulated scenarios</span>
+  <span class="badge-alt">linear regression · 97 simulated scenarios</span>
 </div>
 <div class="hero-title">⚡ EV Traffic Grid Predictor</div>
 <div class="hero-tag">Skip the simulation. Ask the model.</div>
-<p class="hero-sub">Trained on 237 NetLogo BehaviorSpace runs across two experiments on the
-EV-enabled Traffic Grid model: EV share and charging setup, plus car count and traffic
-light timing. Set a scenario below and get the expected traffic and charging outcome
-instantly, no simulation run required.</p>
+<p class="hero-sub">Trained on 291 NetLogo BehaviorSpace runs across three experiments on the
+EV-enabled Traffic Grid model: EV share and charging setup, car count and traffic light
+timing, and grid size and speed limit. Set a scenario below and get the expected traffic
+and charging outcome instantly, no simulation run required.</p>
 """,
     unsafe_allow_html=True,
 )
@@ -265,8 +265,35 @@ with col5:
         step=10,
     )
 
+col6, col7, col8 = st.columns(3)
+with col6:
+    grid_size_x = st.slider(
+        "🗺️ Grid size — columns",
+        min_value=int(feature_ranges["grid_size_x"][0]),
+        max_value=int(feature_ranges["grid_size_x"][1]),
+        value=5,
+        step=1,
+    )
+with col7:
+    grid_size_y = st.slider(
+        "🗺️ Grid size — rows",
+        min_value=int(feature_ranges["grid_size_y"][0]),
+        max_value=int(feature_ranges["grid_size_y"][1]),
+        value=5,
+        step=1,
+    )
+with col8:
+    speed_limit = st.slider(
+        "🏁 Speed limit",
+        min_value=float(feature_ranges["speed_limit"][0]),
+        max_value=float(feature_ranges["speed_limit"][1]),
+        value=1.0,
+        step=0.1,
+    )
+
 X_input = pd.DataFrame(
-    [[ev_percentage, num_charging_stations, charging_bays, num_cars, ticks_per_cycle]],
+    [[ev_percentage, num_charging_stations, charging_bays, num_cars, ticks_per_cycle,
+      grid_size_x, grid_size_y, speed_limit]],
     columns=feature_cols,
 )
 prediction = model.predict(X_input)[0]
@@ -319,14 +346,14 @@ with st.expander("What do the confidence badges mean?"):
 The simulation has randomness built in (random starting battery, random car
 placement), so three repeated runs of the *same* settings still land in
 different places. This model was validated with leave-one-out cross-validation
-across the 79 unique parameter combinations pooled from both experiments, and
-the R² below reflects how much of that variation is genuinely explained by
-your five inputs versus simulation noise.
+across the 97 unique parameter combinations pooled from all three experiments,
+and the R² below reflects how much of that variation is genuinely explained
+by your eight inputs versus simulation noise.
 
 - 🟢 **Well predicted** — R² ≥ 0.4, the input parameters meaningfully drive this outcome
 - 🟡 **Weak relationship** — R² between 0.15 and 0.4, some signal but mostly noise
 - 🔴 **Not meaningfully predictable** — R² below 0.15, this outcome is dominated by
-  randomness rather than by any of the five inputs
+  randomness rather than by any of the eight inputs
         """
     )
     diag_df = pd.DataFrame(diagnostics).T[["r2", "mae", "confidence"]]
@@ -351,6 +378,9 @@ with col_a:
             "charging_bays": "Charging bays per station",
             "num_cars": "Number of cars",
             "ticks_per_cycle": "Ticks per traffic light cycle",
+            "grid_size_x": "Grid size (columns)",
+            "grid_size_y": "Grid size (rows)",
+            "speed_limit": "Speed limit",
         }[x],
     )
 with col_b:
@@ -365,9 +395,15 @@ step_map = {
     "ev_percentage": 10,
     "num_cars": 50,
     "ticks_per_cycle": 10,
+    "grid_size_x": 1,
+    "grid_size_y": 1,
+    "speed_limit": 0.1,
 }
 step = step_map[sweep_var]
-sweep_values = list(range(int(lo), int(hi) + 1, step))
+if sweep_var == "speed_limit":
+    sweep_values = [round(v, 1) for v in np.arange(lo, hi + step / 2, step)]
+else:
+    sweep_values = list(range(int(lo), int(hi) + 1, step))
 
 rows = []
 for v in sweep_values:
@@ -377,6 +413,9 @@ for v in sweep_values:
         "charging_bays": charging_bays,
         "num_cars": num_cars,
         "ticks_per_cycle": ticks_per_cycle,
+        "grid_size_x": grid_size_x,
+        "grid_size_y": grid_size_y,
+        "speed_limit": speed_limit,
     }
     row[sweep_var] = v
     rows.append(row)
@@ -421,7 +460,7 @@ st.plotly_chart(fig, use_container_width=True)
 st.markdown('<div class="road"></div>', unsafe_allow_html=True)
 st.markdown(
     """<p class="spec-footer">MODEL — Linear Regression · trained on outcomes averaged across
-    3 repetitions per parameter combination · 79 unique combos pooled from ev-experiment and
-    congestion-experiment · NetLogo 7.0.4 Traffic Grid</p>""",
+    3 repetitions per parameter combination · 97 unique combos pooled from ev-experiment,
+    congestion-experiment and network-experiment · NetLogo 7.0.4 Traffic Grid</p>""",
     unsafe_allow_html=True,
 )
