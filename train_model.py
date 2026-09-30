@@ -1,13 +1,13 @@
 """
-Trains the EV Traffic Grid surrogate model from one or more NetLogo
+Trains the EV Traffic Grid surrogate model from one or two NetLogo
 BehaviorSpace "spreadsheet" exports.
 
 Usage:
-    python train_model.py ev_experiment.csv congestion_experiment.csv network_experiment.csv
+    python train_model.py ev_experiment.csv congestion_experiment.csv
 
 Each CSV can have a different set of swept constants (the parser detects
 this automatically). Runs from a CSV are aggregated (mean) over their
-repetitions, then all runs are pooled into one dataframe. Any of the 8
+repetitions, then all runs are pooled into one dataframe. Any of the 5
 model features missing from a given CSV (because that experiment held it
 fixed rather than sweeping it) is filled with the value in DEFAULTS below,
 which mirrors this model's interface slider defaults.
@@ -31,9 +31,6 @@ FEATURE_COLS = [
     "charging_bays",
     "num_cars",
     "ticks_per_cycle",
-    "grid_size_x",
-    "grid_size_y",
-    "speed_limit",
 ]
 TARGET_COLS = [
     "mean_wait_time",
@@ -42,9 +39,6 @@ TARGET_COLS = [
     "num_cars_stopped",
     "mean_ev_battery",
 ]
-
-# Features that are genuinely fractional (everything else is cast to int)
-FLOAT_FEATURES = {"speed_limit"}
 
 # Interface slider defaults, used to fill in a feature that a given
 # BehaviorSpace experiment held fixed (and therefore didn't log as a
@@ -55,9 +49,6 @@ DEFAULTS = {
     "charging_bays": 2,
     "num_cars": 200,
     "ticks_per_cycle": 20,
-    "grid_size_x": 5,
-    "grid_size_y": 5,
-    "speed_limit": 1.0,
 }
 
 # Maps a BehaviorSpace constant-row label to our column name
@@ -67,9 +58,6 @@ VAR_NAME_MAP = {
     "charging-bays": "charging_bays",
     "num-cars": "num_cars",
     "ticks-per-cycle": "ticks_per_cycle",
-    "grid-size-x": "grid_size_x",
-    "grid-size-y": "grid_size_y",
-    "speed-limit": "speed_limit",
 }
 
 
@@ -109,11 +97,10 @@ def parse_behaviorspace_spreadsheet(path: str) -> pd.DataFrame:
 
         record = {"run": int(run_id)}
         for col_name in FEATURE_COLS:
-            cast = float if col_name in FLOAT_FEATURES else (lambda v: int(float(v)))
             if col_name in constants:
                 # value is only populated at the block's first column, blank after
                 raw = constants[col_name][s]
-                record[col_name] = cast(raw) if raw != "" else record.get(col_name)
+                record[col_name] = int(float(raw)) if raw != "" else record.get(col_name)
             else:
                 record[col_name] = DEFAULTS[col_name]
 
@@ -179,13 +166,7 @@ def main(csv_paths: list[str]):
             "feature_cols": FEATURE_COLS,
             "target_cols": TARGET_COLS,
             "diagnostics": diagnostics,
-            "feature_ranges": {
-                c: [
-                    (float(agg[c].min()) if c in FLOAT_FEATURES else int(agg[c].min())),
-                    (float(agg[c].max()) if c in FLOAT_FEATURES else int(agg[c].max())),
-                ]
-                for c in FEATURE_COLS
-            },
+            "feature_ranges": {c: [int(agg[c].min()), int(agg[c].max())] for c in FEATURE_COLS},
         },
         "ev_model.pkl",
     )
