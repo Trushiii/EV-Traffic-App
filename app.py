@@ -311,15 +311,15 @@ for t in target_cols:
         pct = max(0.0, min(100.0, value))
         extra = f'<div class="battery-bar"><div class="battery-fill" style="width:{pct:.0f}%"></div></div>'
 
-    cards_html += f"""
-    <div class="dash-card {css_class}">
-      <div class="dash-icon">{TARGET_ICONS[t]}</div>
-      <div class="dash-label">{TARGET_LABELS[t]}</div>
-      <div class="dash-value">{value_str}<span class="unit">{TARGET_UNITS[t]}</span></div>
-      <div class="dash-conf">{emoji} {conf}</div>
-      {extra}
-    </div>
-    """
+    cards_html += (
+        f'<div class="dash-card {css_class}">'
+        f'<div class="dash-icon">{TARGET_ICONS[t]}</div>'
+        f'<div class="dash-label">{TARGET_LABELS[t]}</div>'
+        f'<div class="dash-value">{value_str}<span class="unit">{TARGET_UNITS[t]}</span></div>'
+        f'<div class="dash-conf">{emoji} {conf}</div>'
+        f'{extra}'
+        f'</div>'
+    )
 cards_html += "</div>"
 st.markdown(cards_html, unsafe_allow_html=True)
 
