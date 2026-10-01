@@ -75,22 +75,21 @@ def confidence_label(r2: float) -> str:
     return "Not meaningfully predictable from these inputs"
 
 
+def load_any(path: str) -> pd.DataFrame:
+    head = pd.read_csv(path, nrows=0).columns.tolist()
+    if {"ev_percentage", "num_charging_stations", "charging_bays"} <= set(head):
+        df = pd.read_csv(path)
+        return df.groupby(FEATURE_COLS)[TARGET_COLS].mean().reset_index()
+    return parse_behaviorspace_spreadsheet(path)
+
+
 def main(csv_path: str):
-    df = parse_behaviorspace_spreadsheet(csv_path)
-    print(f"Parsed {len(df)} individual runs")
+    agg = load_any(csv_path)
+    print(f"Loaded {len(agg)} unique parameter combinations")
 
-    # Average over the repeated runs of each parameter combination.
-    # The simulation is stochastic (random starting battery, random car
-    # placement), so within-combo noise is comparable to across-combo signal.
-    # Averaging the repetitions (there were 3 per combo here) is what
-    # actually surfaces the effect of the parameters.
-    agg = df.groupby(FEATURE_COLS)[TARGET_COLS].mean().reset_index()
-    print(f"Aggregated to {len(agg)} unique parameter combinations")
-
-    X = agg[FEATURE_COLS]  # keep as DataFrame so predict-time feature names match training
+    X = agg[FEATURE_COLS]
     y = agg[TARGET_COLS].values
 
-    # Honest validation: leave-one-out, since there are only ~64 unique combos
     loo_preds = cross_val_predict(LinearRegression(), X, y, cv=LeaveOneOut())
     diagnostics = {}
     for i, t in enumerate(TARGET_COLS):
@@ -108,10 +107,8 @@ def main(csv_path: str):
     final_model = LinearRegression()
     final_model.fit(X, y)
 
-    loo_residuals = y - loo_preds                      # (n_combos, 5)
-    target_std    = y.std(axis=0)                      # (5,)
-
-    # unique values per feature, so the app can build exact sliders after retraining
+    loo_residuals = y - loo_preds
+    target_std    = y.std(axis=0)
     unique_values = {c: sorted(agg[c].unique().tolist()) for c in FEATURE_COLS}
 
     joblib.dump(
@@ -121,13 +118,11 @@ def main(csv_path: str):
             "target_cols": TARGET_COLS,
             "diagnostics": diagnostics,
             "feature_ranges": {c: [int(agg[c].min()), int(agg[c].max())] for c in FEATURE_COLS},
-
-         "train_X": X.values,            # (n_combos, 3)  ndarray
-        "train_y": y,                   # (n_combos, 5)  ndarray
-        "loo_residuals": loo_residuals, # (n_combos, 5)  ndarray
-        "target_std": target_std,       # (5,)           ndarray
-        "unique_values": unique_values, # dict of lists
-        
+            "train_X": X.values,
+            "train_y": y,
+            "loo_residuals": loo_residuals,
+            "target_std": target_std,
+            "unique_values": unique_values,
         },
         "ev_model.pkl",
     )

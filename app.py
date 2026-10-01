@@ -195,6 +195,35 @@ CONFIDENCE_CLASS = {
     "Not meaningfully predictable from these inputs": "conf-red",
 }
 
+def local_confidence(input_point, target_idx, target_name, k=None):
+    """Per-prediction reliability. Falls back to the global LOO R2 if the
+    pickle predates the local-confidence upgrade (i.e. no train_X key)."""
+    if "train_X" not in bundle:
+        return diagnostics[target_name]["confidence"]
+
+    X   = bundle["train_X"]
+    y   = bundle["train_y"]
+    res = bundle["loo_residuals"]
+
+    if k is None:
+        k = max(8, int(round(len(X) * 0.15)))
+
+    scale = X.std(axis=0)
+    scale[scale == 0] = 1.0
+    d = np.sqrt((((X - input_point) / scale) ** 2).sum(axis=1))
+    idx = np.argsort(d)[:k]
+
+    y_nb = y[idx, target_idx]
+    r_nb = res[idx, target_idx]
+    ss_tot = np.sum((y_nb - y_nb.mean()) ** 2)
+    r2 = 1.0 if ss_tot <= 1e-12 else 1.0 - np.sum(r_nb ** 2) / ss_tot
+
+    if r2 >= 0.4:
+        return "Well predicted"
+    elif r2 >= 0.15:
+        return "Weak relationship"
+    return "Not meaningfully predictable from these inputs"
+
 def local_confidence(input_point, target_idx, k=None):
     """Per-prediction reliability: R² of the linear model computed only over the
     k nearest training combos in standardized feature space. Moves as the sliders
@@ -338,9 +367,9 @@ of that variation is genuinely explained by your three inputs versus simulation 
   light timing) rather than by EV share, station count, or bays
         """
     )
-    diag_df = pd.DataFrame(diagnostics).T[["r2", "mae", "confidence"]]
-    diag_df.index = [TARGET_LABELS[i] for i in diag_df.index]
-    st.dataframe(diag_df, use_container_width=True)
+    conf = local_confidence(X_input.values[0], target_cols.index(t), t)
+    css_class = CONFIDENCE_CLASS[conf]
+    emoji = CONFIDENCE_EMOJI[conf]
 
 st.markdown('<div class="road"></div>', unsafe_allow_html=True)
 
