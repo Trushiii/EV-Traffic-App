@@ -176,8 +176,9 @@ feature_cols = bundle["feature_cols"]
 target_cols = bundle["target_cols"]
 diagnostics = bundle["diagnostics"]
 feature_ranges = bundle["feature_ranges"]
-training_points_normalized = bundle["training_points_normalized"]
-coverage_threshold = bundle["coverage_threshold"]
+training_points_normalized = bundle.get("training_points_normalized")
+coverage_threshold = bundle.get("coverage_threshold")
+has_coverage_data = training_points_normalized is not None and coverage_threshold is not None
 
 TARGET_LABELS = {
     "mean_wait_time": "Wait time",
@@ -331,31 +332,40 @@ pred_dict["mean_ev_battery"] = max(0.0, min(100.0, pred_dict["mean_ev_battery"])
 # close your specific chosen combination is to a combination the simulation
 # actually ran, versus the model extrapolating into untested territory.
 # ---------------------------------------------------------------------------
-query_norm = np.array(
-    [
-        (X_input[c].iloc[0] - feature_ranges[c][0])
-        / (feature_ranges[c][1] - feature_ranges[c][0] or 1)
-        for c in feature_cols
-    ]
-)
-nearest_dist = float(np.linalg.norm(training_points_normalized - query_norm, axis=1).min())
-is_covered = nearest_dist <= coverage_threshold
-
-if is_covered:
-    st.markdown(
-        f"""<div class="coverage-badge coverage-ok">
-        <span class="cov-icon">✅</span>
-        <span>This combination is close to a scenario the simulation actually ran, predictions below are reasonably trustworthy.</span>
-        <span class="cov-meta">distance {nearest_dist:.2f} / threshold {coverage_threshold:.2f}</span>
-        </div>""",
-        unsafe_allow_html=True,
+if has_coverage_data:
+    query_norm = np.array(
+        [
+            (X_input[c].iloc[0] - feature_ranges[c][0])
+            / (feature_ranges[c][1] - feature_ranges[c][0] or 1)
+            for c in feature_cols
+        ]
     )
+    nearest_dist = float(np.linalg.norm(training_points_normalized - query_norm, axis=1).min())
+    is_covered = nearest_dist <= coverage_threshold
+
+    if is_covered:
+        st.markdown(
+            f"""<div class="coverage-badge coverage-ok">
+            <span class="cov-icon">✅</span>
+            <span>This combination is close to a scenario the simulation actually ran, predictions below are reasonably trustworthy.</span>
+            <span class="cov-meta">distance {nearest_dist:.2f} / threshold {coverage_threshold:.2f}</span>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            f"""<div class="coverage-badge coverage-warn">
+            <span class="cov-icon">⚠️</span>
+            <span>No simulation run closely matches this combination, the model is extrapolating here. Treat the numbers below as a rough estimate.</span>
+            <span class="cov-meta">distance {nearest_dist:.2f} / threshold {coverage_threshold:.2f}</span>
+            </div>""",
+            unsafe_allow_html=True,
+        )
 else:
     st.markdown(
-        f"""<div class="coverage-badge coverage-warn">
+        """<div class="coverage-badge coverage-warn">
         <span class="cov-icon">⚠️</span>
-        <span>No simulation run closely matches this combination, the model is extrapolating here. Treat the numbers below as a rough estimate.</span>
-        <span class="cov-meta">distance {nearest_dist:.2f} / threshold {coverage_threshold:.2f}</span>
+        <span>Scenario coverage check unavailable — this model file predates that feature. Retrain with the current train_model.py to enable it.</span>
         </div>""",
         unsafe_allow_html=True,
     )
