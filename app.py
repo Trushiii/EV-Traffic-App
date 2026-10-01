@@ -195,6 +195,33 @@ CONFIDENCE_CLASS = {
     "Not meaningfully predictable from these inputs": "conf-red",
 }
 
+def local_confidence(input_point, target_idx, k=None):
+    """Per-prediction reliability: R² of the linear model computed only over the
+    k nearest training combos in standardized feature space. Moves as the sliders
+    move, so all three badges become reachable."""
+    X     = bundle["train_X"]
+    y     = bundle["train_y"]
+    res   = bundle["loo_residuals"]
+
+    if k is None:
+        k = max(8, int(round(len(X) * 0.15)))   # ~15% of the training set
+
+    scale = X.std(axis=0)
+    scale[scale == 0] = 1.0
+    d = np.sqrt((((X - input_point) / scale) ** 2).sum(axis=1))
+    idx = np.argsort(d)[:k]
+
+    y_nb = y[idx, target_idx]
+    r_nb = res[idx, target_idx]
+    ss_tot = np.sum((y_nb - y_nb.mean()) ** 2)
+    r2 = 1.0 if ss_tot <= 1e-12 else 1.0 - np.sum(r_nb ** 2) / ss_tot
+
+    if r2 >= 0.4:
+        return "Well predicted"
+    elif r2 >= 0.15:
+        return "Weak relationship"
+    return "Not meaningfully predictable from these inputs"
+
 # ---------------------------------------------------------------------------
 # Hero
 # ---------------------------------------------------------------------------
@@ -219,6 +246,17 @@ st.markdown('<div class="road"></div>', unsafe_allow_html=True)
 # ---------------------------------------------------------------------------
 st.subheader("Set your scenario")
 
+def _step_for(feature):
+    vals = bundle.get("unique_values", {}).get(feature)
+    if not vals or len(vals) < 2:
+        return 1
+    diffs = np.diff(sorted(vals))
+    return int(diffs[diffs > 0].min()) if len(diffs) else 1
+
+STEP_EV       = _step_for("ev_percentage")
+STEP_STATIONS = _step_for("num_charging_stations")
+STEP_BAYS     = _step_for("charging_bays")
+
 col1, col2, col3 = st.columns(3)
 
 with col1:
@@ -227,7 +265,7 @@ with col1:
         min_value=int(feature_ranges["ev_percentage"][0]),
         max_value=int(feature_ranges["ev_percentage"][1]),
         value=20,
-        step=10,
+        step=STEP_EV,
     )
 with col2:
     num_charging_stations = st.slider(
@@ -235,7 +273,7 @@ with col2:
         min_value=int(feature_ranges["num_charging_stations"][0]),
         max_value=int(feature_ranges["num_charging_stations"][1]),
         value=8,
-        step=4,
+        step=STEP_STATIONS,
     )
 with col3:
     charging_bays = st.slider(
@@ -243,7 +281,7 @@ with col3:
         min_value=int(feature_ranges["charging_bays"][0]),
         max_value=int(feature_ranges["charging_bays"][1]),
         value=2,
-        step=1,
+        step=STEP_BAYS,
     )
 
 X_input = pd.DataFrame(
@@ -261,23 +299,23 @@ st.subheader("Predicted outcome after 500 ticks")
 
 cards_html = '<div class="dash-row">'
 for t in target_cols:
-    diag = diagnostics[t]
-    css_class = CONFIDENCE_CLASS[diag["confidence"]]
-    emoji = CONFIDENCE_EMOJI[diag["confidence"]]
-    value = pred_dict[t]
-    value_str = f"{value:.2f}" if abs(value) < 1000 else f"{value:,.0f}"
+   conf = local_confidence(X_input.values[0], target_cols.index(t))
+   css_class = CONFIDENCE_CLASS[conf]
+   emoji = CONFIDENCE_EMOJI[conf]
+   value = pred_dict[t]
+   value_str = f"{value:.2f}" if abs(value) < 1000 else f"{value:,.0f}"
 
-    extra = ""
-    if t == "mean_ev_battery":
+extra = ""
+if t == "mean_ev_battery":
         pct = max(0.0, min(100.0, value))
         extra = f'<div class="battery-bar"><div class="battery-fill" style="width:{pct:.0f}%"></div></div>'
 
-    cards_html += f"""
+cards_html += f"""
     <div class="dash-card {css_class}">
       <div class="dash-icon">{TARGET_ICONS[t]}</div>
       <div class="dash-label">{TARGET_LABELS[t]}</div>
       <div class="dash-value">{value_str}<span class="unit">{TARGET_UNITS[t]}</span></div>
-      <div class="dash-conf">{emoji} {diag['confidence']}</div>
+      <div class="dash-conf">{emoji} {conf}</div>
       {extra}
     </div>
     """

@@ -108,6 +108,12 @@ def main(csv_path: str):
     final_model = LinearRegression()
     final_model.fit(X, y)
 
+    loo_residuals = y - loo_preds                      # (n_combos, 5)
+    target_std    = y.std(axis=0)                      # (5,)
+
+    # unique values per feature, so the app can build exact sliders after retraining
+    unique_values = {c: sorted(agg[c].unique().tolist()) for c in FEATURE_COLS}
+
     joblib.dump(
         {
             "model": final_model,
@@ -115,6 +121,13 @@ def main(csv_path: str):
             "target_cols": TARGET_COLS,
             "diagnostics": diagnostics,
             "feature_ranges": {c: [int(agg[c].min()), int(agg[c].max())] for c in FEATURE_COLS},
+
+         "train_X": X.values,            # (n_combos, 3)  ndarray
+        "train_y": y,                   # (n_combos, 5)  ndarray
+        "loo_residuals": loo_residuals, # (n_combos, 5)  ndarray
+        "target_std": target_std,       # (5,)           ndarray
+        "unique_values": unique_values, # dict of lists
+        
         },
         "ev_model.pkl",
     )
